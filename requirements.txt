@@ -3,3 +3,4 @@ openai
 python-dotenv
 azure-cognitiveservices-speech
 pydub
+pyaudioop

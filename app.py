@@ -3,8 +3,6 @@ import azure.cognitiveservices.speech as speechsdk
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 import os
-from pydub import AudioSegment
-from pydub.playback import play
 
 load_dotenv()
 
@@ -25,25 +23,20 @@ deployment = os.getenv("OPENAI_DEPLOYMENT")
 # -------------------------------
 # Speech to Text
 # -------------------------------
-def azure_stt():
+def azure_tts(text):
     speech_config = speechsdk.SpeechConfig(
         subscription=speech_key, region=speech_region
     )
-    speech_config.speech_recognition_language = "en-US"
+    speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"
 
-    st.write("🎙️ Listening... Speak now!")
+    audio_config = speechsdk.audio.AudioOutputConfig(filename="output.wav")
 
-    audio_config = speechsdk.AudioConfig(use_default_microphone=True)
-    recognizer = speechsdk.SpeechRecognizer(
+    synthesizer = speechsdk.SpeechSynthesizer(
         speech_config=speech_config, audio_config=audio_config
     )
 
-    result = recognizer.recognize_once()
-
-    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-        return result.text
-    else:
-        return "Speech not recognized."
+    synthesizer.speak_text_async(text).get()
+    return "output.wav"
 
 
 # -------------------------------

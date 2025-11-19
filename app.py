@@ -3,47 +3,45 @@ import azure.cognitiveservices.speech as speechsdk
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 import os
+import tempfile
 
 load_dotenv()
 
-# --------------------------
+# -----------------------------
 # Azure Credentials
-# --------------------------
+# -----------------------------
+SPEECH_KEY = os.getenv("SPEECH_KEY")
+SPEECH_REGION = os.getenv("SPEECH_REGION")
 
-# Azure Speech Service
-speech_key = os.getenv("SPEECH_KEY")
-speech_region = os.getenv("SPEECH_REGION")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_ENDPOINT = os.getenv("OPENAI_ENDPOINT")
+OPENAI_DEPLOYMENT = os.getenv("OPENAI_DEPLOYMENT")  # YOUR GPT DEPLOYMENT NAME
 
-# Azure OpenAI
-openai_endpoint = os.getenv("OPENAI_ENDPOINT")
-openai_key = os.getenv("OPENAI_API_KEY")
-deployment_name = os.getenv("OPENAI_DEPLOYMENT")
-
-
+# Azure OpenAI Client
 client = AzureOpenAI(
-    api_key=openai_key,
-    azure_endpoint=openai_endpoint,
+    api_key=OPENAI_KEY,
+    azure_endpoint=OPENAI_ENDPOINT,
     api_version="2024-05-01-preview"
 )
 
+# -----------------------------
+# Speech-to-Text (Auto-Detect Language)
+# -----------------------------
+def azure_stt_from_bytes(audio_bytes):
 
-# --------------------------
-# Auto Language Detect STT
-# --------------------------
-
-def azure_stt_from_audio_bytes(audio_bytes):
-    # Speech config
     speech_config = speechsdk.SpeechConfig(
-        subscription=speech_key,
-        region=speech_region
+        subscription=SPEECH_KEY,
+        region=SPEECH_REGION
     )
 
-    # AUTO DETECT language
-    auto_detect = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-        languages=["en-US", "ur-PK", "ar-SA", "hi-IN"]
+    # 🔥 Enable auto language detection  
+    auto_detect_source_language_config = (
+        speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
+            languages=["en-US", "ur-PK", "ar-SA", "hi-IN"]
+        )
     )
 
-    # Stream for audio bytes
+    # Create push stream
     stream = speechsdk.audio.PushAudioInputStream()
     stream.write(audio_bytes)
     stream.close()
@@ -53,96 +51,91 @@ def azure_stt_from_audio_bytes(audio_bytes):
     recognizer = speechsdk.SpeechRecognizer(
         speech_config=speech_config,
         audio_config=audio_config,
-        auto_detect_source_language_config=auto_detect
+        auto_detect_source_language_config=auto_detect_source_language_config
     )
 
     result = recognizer.recognize_once()
 
     if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-        detected_lang = result.properties[
-            speechsdk.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult
-        ]
-        return result.text, detected_lang
+        return result.text
 
-    return "Speech not recognized.", "unknown"
+    return "Could not recognize speech."
 
 
-# --------------------------
-# GPT Conversation
-# --------------------------
-
-def chat_llm(text, detected_lang):
+# -----------------------------
+# LLM Chat
+# -----------------------------
+def chat_llm(user_msg):
     response = client.chat.completions.create(
-        model=deployment_name,
+        model=OPENAI_DEPLOYMENT,
         messages=[
-            {
-                "role": "system",
-                "content": f"You are a multilingual assistant. Reply in the same language as the user. User is speaking: {detected_lang}."
-            },
-            {"role": "user", "content": text},
-        ]
+            {"role": "system", "content": "You are a multilingual helpful assistant."},
+            {"role": "user", "content": user_msg},
+        ],
+        max_tokens=300
     )
     return response.choices[0].message.content
 
 
-# --------------------------
-# Azure Text To Speech (auto-language voice)
-# --------------------------
+# -----------------------------
+# Text-to-Speech (Auto Voice Based on Language)
+# -----------------------------
+def auto_voice_for_language(text):
 
-def azure_tts(text, language):
+    if any(ch in text for ch in "اأإءؤئة"):
+        return "ar-SA-HamedNeural"
+    if any(ch in text for ch in "ںچڈڑے"):
+        return "ur-PK-UzmaNeural"
+    if any(ch in text for ch in "अआइईउऊ"):
+        return "hi-IN-MadhurNeural"
+    return "en-US-JennyNeural"
+
+
+def azure_tts(text):
+
+    voice = auto_voice_for_language(text)
+
     speech_config = speechsdk.SpeechConfig(
-        subscription=speech_key,
-        region=speech_region
+        subscription=SPEECH_KEY,
+        region=SPEECH_REGION
     )
 
-    # Dynamic multilingual voices
-    voice_map = {
-        "en-US": "en-US-JennyNeural",
-        "ur-PK": "ur-PK-UzmaNeural",
-        "ar-SA": "ar-SA-HamedNeural",
-        "hi-IN": "hi-IN-SwaraNeural"
-    }
-
-    voice = voice_map.get(language, "en-US-JennyNeural")
     speech_config.speech_synthesis_voice_name = voice
 
-    audio_config = speechsdk.audio.AudioOutputConfig(
-        filename="response.wav"
-    )
+    temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+    audio_config = speechsdk.audio.AudioOutputConfig(filename=temp_wav)
 
     synthesizer = speechsdk.SpeechSynthesizer(
-        speech_config=speech_config,
-        audio_config=audio_config
+        speech_config=speech_config, audio_config=audio_config
     )
 
     synthesizer.speak_text_async(text).get()
 
-    return "response.wav"
+    return temp_wav
 
 
-# --------------------------
+# -----------------------------
 # Streamlit UI
-# --------------------------
+# -----------------------------
+st.title("🎙️ Azure Speech → GPT → Voice Assistant (Auto Language)")
 
-st.title("🎤 Azure STT + GPT + TTS (Multilingual Auto Detect)")
-st.write("Speak in **English, Urdu, Arabic, or Hindi** — the system detects automatically.")
+audio_data = st.audio_input("Click to record your voice")
 
-audio_input = st.audio_input("Click to record your voice")
+if audio_data:
+    st.write("🔄 Processing...")
 
-if audio_input:
-    st.write("⏳ Processing speech...")
-    audio_bytes = audio_input.getvalue()
+    audio_bytes = audio_data.getvalue()
 
-    # Speech to Text
-    text, lang = azure_stt_from_audio_bytes(audio_bytes)
+    # Step 1: Speech-to-Text
+    text = azure_stt_from_bytes(audio_bytes)
+    st.success(f"🗣️ You said: {text}")
 
-    st.success(f"🗣 You said ({lang}): {text}")
+    # Step 2: GPT Response
+    reply = chat_llm(text)
+    st.info(f"🤖 GPT: {reply}")
 
-    # LLM response
-    response = chat_llm(text, lang)
-    st.info(f"🤖 GPT: {response}")
+    # Step 3: Text-to-Speech
+    wav_file = azure_tts(reply)
 
-    # Text-to-Speech
-    audio_file = azure_tts(response, lang)
-
-    st.audio(open(audio_file, "rb").read(), format="audio/wav")
+    with open(wav_file, "rb") as f:
+        st.audio(f.read(), format="audio/wav")

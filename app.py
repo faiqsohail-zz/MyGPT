@@ -1,29 +1,24 @@
 import streamlit as st
 import azure.cognitiveservices.speech as speechsdk
-from openai import AzureOpenAI
 import tempfile
+import openai
 
 # -----------------------------
-#  YOUR AZURE SECRETS (NO ENV)
+#  YOUR AZURE SPEECH SECRETS
 # -----------------------------
 SPEECH_KEY = "577IXgzDaBsgyxHGxDjcxVKHlhW7MpTz6EApueKJNAdVVo89Ew9RJQQJ99BKAC3pKaRXJ3w3AAAYACOGxpcA"
 SPEECH_REGION = "eastasia"
 
-OPENAI_API_KEY = "AktWqc6lXxksNEDOc3dlzwT4GI6zCKdDfqZDg0olzNng1FHXWmojJQQJ99BKACqBBLyXJ3w3AAABACOGKcQ2"
-OPENAI_ENDPOINT = "https://navttcopenai.openai.azure.com/"
-OPENAI_DEPLOYMENT = "navttcopenai"
+# -----------------------------
+#  OpenRouter API
+# -----------------------------
+OPENROUTER_API_KEY = "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"
+
+openai.api_key = OPENROUTER_API_KEY
+openai.api_base = "https://openrouter.ai/api/v1"
 
 # -----------------------------
-#  Azure OpenAI Client
-# -----------------------------
-client = AzureOpenAI(
-    api_key=OPENAI_API_KEY,
-    api_version="2024-05-01-preview",
-    azure_endpoint=OPENAI_ENDPOINT,
-)
-
-# -----------------------------
-#  Speech-to-Text (Auto Lang)
+#  Azure Speech-to-Text (Auto Lang)
 # -----------------------------
 def azure_stt_from_audio(audio_bytes):
     speech_config = speechsdk.SpeechConfig(
@@ -31,12 +26,10 @@ def azure_stt_from_audio(audio_bytes):
         region=SPEECH_REGION
     )
 
-    # Auto language detection (adds Urdu, English, Arabic)
     auto_detect = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
         languages=["en-US", "ur-PK", "ar-SA"]
     )
 
-    # Create stream
     stream = speechsdk.audio.PushAudioInputStream()
     stream.write(audio_bytes)
     stream.close()
@@ -50,19 +43,14 @@ def azure_stt_from_audio(audio_bytes):
     )
 
     result = recognizer.recognize_once()
-
-    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-        return result.text
-    else:
-        return "Speech not recognized."
-
+    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else "Speech not recognized."
 
 # -----------------------------
-#  ChatGPT (Azure OpenAI)
+#  ChatGPT via OpenRouter
 # -----------------------------
 def chat_llm(msg):
-    response = client.chat.completions.create(
-        model=OPENAI_DEPLOYMENT,
+    response = openai.chat.completions.create(
+        model="gpt-4o-mini",  # OpenRouter supported model
         messages=[
             {"role": "system", "content": "You are a multilingual helpful AI assistant."},
             {"role": "user", "content": msg},
@@ -70,9 +58,8 @@ def chat_llm(msg):
     )
     return response.choices[0].message.content
 
-
 # -----------------------------
-#  Text-to-Speech
+#  Azure Text-to-Speech
 # -----------------------------
 def azure_tts(text):
     speech_config = speechsdk.SpeechConfig(
@@ -81,23 +68,19 @@ def azure_tts(text):
     )
     speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"
 
-    # Save to temporary wav file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         audio_config = speechsdk.audio.AudioOutputConfig(filename=tmp.name)
-
         synthesizer = speechsdk.SpeechSynthesizer(
             speech_config=speech_config,
             audio_config=audio_config
         )
         synthesizer.speak_text_async(text).get()
-
         return tmp.name
-
 
 # -----------------------------
 #  STREAMLIT UI
 # -----------------------------
-st.title("🎤 Azure Voice → GPT → Voice Chatbot (Auto-Language)")
+st.title("🎤 Azure Voice → OpenRouter GPT → Voice Chatbot (Auto-Language)")
 
 audio_input = st.audio_input("Click to record your voice 🎙️")
 
@@ -115,5 +98,4 @@ if audio_input:
 
     # TTS
     wav_file = azure_tts(answer)
-
     st.audio(wav_file, format="audio/wav")

@@ -101,7 +101,7 @@ if audio_input:
         answer = chat_llm(text)
         st.info(f"🤖 GPT: {answer}")
 
-        # TTS
+        # TTS — only run if we have an answer
         wav_file = azure_tts(answer)
         st.audio(wav_file, format="audio/wav")
     else:

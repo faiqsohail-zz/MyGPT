@@ -4,21 +4,21 @@ import tempfile
 import openai
 
 # -----------------------------
-#  YOUR AZURE SPEECH SECRETS
+#  AZURE SPEECH CONFIG
 # -----------------------------
 SPEECH_KEY = "577IXgzDaBsgyxHGxDjcxVKHlhW7MpTz6EApueKJNAdVVo89Ew9RJQQJ99BKAC3pKaRXJ3w3AAAYACOGxpcA"
 SPEECH_REGION = "eastasia"
 
 # -----------------------------
-#  OpenRouter API
+#  OPENROUTER CONFIG
 # -----------------------------
 OPENROUTER_API_KEY = "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"
-
 openai.api_key = OPENROUTER_API_KEY
 openai.api_base = "https://openrouter.ai/api/v1"
+openai.api_type = "open_router"
 
 # -----------------------------
-#  Azure Speech-to-Text (Auto Lang)
+#  AZURE SPEECH-TO-TEXT (AUTO LANG)
 # -----------------------------
 def azure_stt_from_audio(audio_bytes):
     speech_config = speechsdk.SpeechConfig(
@@ -43,14 +43,17 @@ def azure_stt_from_audio(audio_bytes):
     )
 
     result = recognizer.recognize_once()
-    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else "Speech not recognized."
+    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else None
 
 # -----------------------------
-#  ChatGPT via OpenRouter
+#  OPENROUTER GPT CHAT
 # -----------------------------
 def chat_llm(msg):
+    if not msg:
+        return "I couldn't hear you clearly."
+
     response = openai.chat.completions.create(
-        model="gpt-4o-mini",  # OpenRouter supported model
+        model="gpt-4o-mini",  # OpenRouter-supported model
         messages=[
             {"role": "system", "content": "You are a multilingual helpful AI assistant."},
             {"role": "user", "content": msg},
@@ -59,7 +62,7 @@ def chat_llm(msg):
     return response.choices[0].message.content
 
 # -----------------------------
-#  Azure Text-to-Speech
+#  AZURE TEXT-TO-SPEECH
 # -----------------------------
 def azure_tts(text):
     speech_config = speechsdk.SpeechConfig(
@@ -82,6 +85,7 @@ def azure_tts(text):
 # -----------------------------
 st.title("🎤 Azure Voice → OpenRouter GPT → Voice Chatbot (Auto-Language)")
 
+# Record audio input
 audio_input = st.audio_input("Click to record your voice 🎙️")
 
 if audio_input:
@@ -90,11 +94,18 @@ if audio_input:
 
     # STT
     text = azure_stt_from_audio(audio_bytes)
-    st.success(f"🗣️ You said: {text}")
+    if text:
+        st.success(f"🗣️ You said: {text}")
 
-    # GPT
-    answer = chat_llm(text)
-    st.info(f"🤖 GPT: {answer}")
+        # GPT
+        answer = chat_llm(text)
+        st.info(f"🤖 GPT: {answer}")
+
+        # TTS
+        wav_file = azure_tts(answer)
+        st.audio(wav_file, format="audio/wav")
+    else:
+        st.error("❌ Speech not recognized. Please try again.")
 
     # TTS
     wav_file = azure_tts(answer)

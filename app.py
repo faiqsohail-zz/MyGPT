@@ -11,7 +11,7 @@ SPEECH_REGION = "eastasia"
 
 OPENAI_API_KEY = "AktWqc6lXxksNEDOc3dlzwT4GI6zCKdDfqZDg0olzNng1FHXWmojJQQJ99BKACqBBLyXJ3w3AAABACOGKcQ2"
 OPENAI_ENDPOINT = "https://navttcopenai.openai.azure.com/"
-OPENAI_DEPLOYMENT = NAVTTCOPENAI
+OPENAI_DEPLOYMENT = "NAVTTCOPENAI"
 
 # -----------------------------
 #  Azure OpenAI Client

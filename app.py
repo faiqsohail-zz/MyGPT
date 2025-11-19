@@ -6,11 +6,11 @@ import os
 
 load_dotenv()
 
-# Azure Speech Credentials
+# Azure Speech
 speech_key = os.getenv("SPEECH_KEY")
 speech_region = os.getenv("SPEECH_REGION")
 
-# Azure OpenAI Credentials
+# Azure OpenAI
 client = AzureOpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     api_version="2024-05-01-preview",
@@ -20,28 +20,28 @@ client = AzureOpenAI(
 deployment = os.getenv("OPENAI_DEPLOYMENT")
 
 
-# -------------------------------
-# Speech to Text
-# -------------------------------
-def azure_tts(text):
+# ---- Speech-to-Text ----
+def azure_stt():
     speech_config = speechsdk.SpeechConfig(
         subscription=speech_key, region=speech_region
     )
-    speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"
+    speech_config.speech_recognition_language = "en-US"
 
-    audio_config = speechsdk.audio.AudioOutputConfig(filename="output.wav")
+    st.write("🎙️ Speak now...")
 
-    synthesizer = speechsdk.SpeechSynthesizer(
-        speech_config=speech_config, audio_config=audio_config
+    recognizer = speechsdk.SpeechRecognizer(
+        speech_config=speech_config,
+        audio_config=speechsdk.AudioConfig(use_default_microphone=True)
     )
 
-    synthesizer.speak_text_async(text).get()
-    return "output.wav"
+    result = recognizer.recognize_once()
+
+    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+        return result.text
+    return "Speech not recognized."
 
 
-# -------------------------------
-# LLM Response (Azure OpenAI)
-# -------------------------------
+# ---- LLM ----
 def chat_llm(user_msg):
     response = client.chat.completions.create(
         model=deployment,
@@ -53,9 +53,7 @@ def chat_llm(user_msg):
     return response.choices[0].message.content
 
 
-# -------------------------------
-# Text to Speech
-# -------------------------------
+# ---- Text-to-Speech ----
 def azure_tts(text):
     speech_config = speechsdk.SpeechConfig(
         subscription=speech_key, region=speech_region
@@ -65,31 +63,24 @@ def azure_tts(text):
     audio_config = speechsdk.audio.AudioOutputConfig(filename="output.wav")
 
     synthesizer = speechsdk.SpeechSynthesizer(
-        speech_config=speech_config, audio_config=audio_config
+        speech_config=speech_config,
+        audio_config=audio_config
     )
 
     synthesizer.speak_text_async(text).get()
-
     return "output.wav"
 
 
-# -------------------------------
-# Streamlit App UI
-# -------------------------------
-st.title("🎤 Azure Speech-to-Text + GPT + Text-to-Speech Chatbot")
-st.write("Speak → LLM → Listen")
+# ---- UI ----
+st.title("🎤 Azure Speech → GPT → TTS Chatbot")
 
-if st.button("Start Recording"):
+if st.button("Start Talking"):
     text = azure_stt()
-    st.success(f"🗣️ You said: {text}")
+    st.success(f"You said: {text}")
 
-    # LLM reply
     reply = chat_llm(text)
-    st.info(f"🤖 LLM Response: {reply}")
+    st.info(f"GPT says: {reply}")
 
-    # Convert to speech
-    audio_file = azure_tts(reply)
+    wav = azure_tts(reply)
 
-    # Play audio
-    audio_bytes = open(audio_file, "rb").read()
-    st.audio(audio_bytes, format="audio/wav")
+    st.audio(open(wav, "rb").read(), format="audio/wav")

@@ -16,26 +16,30 @@ OPENROUTER_MODEL = "meta-llama/llama-3.1-8b-instruct"
 # -------------------------
 # 🎤 Azure Speech-to-Text
 # -------------------------
-def azure_stt():
+def azure_stt(audio_bytes):
+    # Save the uploaded audio to a temp WAV file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(audio_bytes)
+        audio_path = tmp.name
+
     speech_config = speechsdk.SpeechConfig(
         subscription=SPEECH_KEY,
         region=SPEECH_REGION
     )
-    speech_config.speech_recognition_language = "ur-PK"  # or auto detect using language auto detection config
+    speech_config.speech_recognition_language = "ur-PK"  # or auto-detect
 
-    audio_config = speechsdk.audio.AudioConfig(use_default_microphone=True)
+    audio_config = speechsdk.audio.AudioConfig(filename=audio_path)
     recognizer = speechsdk.SpeechRecognizer(
         speech_config=speech_config,
         audio_config=audio_config
     )
 
-    st.info("🎙️ Listening...")
     result = recognizer.recognize_once()
+    os.remove(audio_path)
 
     if result.reason == speechsdk.ResultReason.RecognizedSpeech:
         return result.text
-    else:
-        return "Speech not recognized."
+    return "Speech not recognized"
 
 # -------------------------
 # 🤖 OpenRouter LLM

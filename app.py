@@ -1,69 +1,68 @@
 import streamlit as st
 import azure.cognitiveservices.speech as speechsdk
-import tempfile
-import openai
+import requests
+import json
+import base64
 
-# -----------------------------
-#  AZURE SPEECH CONFIG
-# -----------------------------
+# -------------------------
+# 🔐 YOUR KEYS
+# -------------------------
 SPEECH_KEY = "577IXgzDaBsgyxHGxDjcxVKHlhW7MpTz6EApueKJNAdVVo89Ew9RJQQJ99BKAC3pKaRXJ3w3AAAYACOGxpcA"
 SPEECH_REGION = "eastasia"
 
-# -----------------------------
-#  OPENROUTER CONFIG
-# -----------------------------
-OPENROUTER_API_KEY = "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"
-openai.api_key = OPENROUTER_API_KEY
-openai.api_base = "https://openrouter.ai/api/v1"
-openai.api_type = "open_router"
+OPENROUTER_API_KEY = "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"   # ← put your key here
+OPENROUTER_MODEL = "meta-llama/llama-3.1-8b-instruct"
 
-# -----------------------------
-#  AZURE SPEECH-TO-TEXT (AUTO LANG)
-# -----------------------------
-def azure_stt_from_audio(audio_bytes):
+# -------------------------
+# 🎤 Azure Speech-to-Text
+# -------------------------
+def azure_stt():
     speech_config = speechsdk.SpeechConfig(
         subscription=SPEECH_KEY,
         region=SPEECH_REGION
     )
+    speech_config.speech_recognition_language = "ur-PK"  # or auto detect using language auto detection config
 
-    auto_detect = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-        languages=["en-US", "ur-PK", "ar-SA"]
-    )
-
-    stream = speechsdk.audio.PushAudioInputStream()
-    stream.write(audio_bytes)
-    stream.close()
-
-    audio_config = speechsdk.AudioConfig(stream=stream)
-
+    audio_config = speechsdk.audio.AudioConfig(use_default_microphone=True)
     recognizer = speechsdk.SpeechRecognizer(
         speech_config=speech_config,
-        audio_config=audio_config,
-        auto_detect_source_language_config=auto_detect
+        audio_config=audio_config
     )
 
+    st.info("🎙️ Listening...")
     result = recognizer.recognize_once()
-    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else None
 
-# -----------------------------
-#  OPENROUTER GPT CHAT
-# -----------------------------
-def chat_llm(msg):
-    if not msg:
-        return "I couldn't hear you clearly."
+    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+        return result.text
+    else:
+        return "Speech not recognized."
 
-    response = openai.chat.completions.create(
-        model="gpt-4o-mini",  # OpenRouter-supported model
-        messages=[
-            {"role": "system", "content": "You are a multilingual helpful AI assistant."},
-            {"role": "user", "content": msg},
+# -------------------------
+# 🤖 OpenRouter LLM
+# -------------------------
+def openrouter_chat(prompt):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {"role": "user", "content": prompt}
         ]
-    )
-    return response.choices[0].message.content
+    }
 
-# -----------------------------
-#  AZURE TEXT-TO-SPEECH
-# -----------------------------
+    response = requests.post(url, json=payload, headers=headers)
+    data = response.json()
+
+    return data["choices"][0]["message"]["content"]
+
+# -------------------------
+# 🔊 Azure Text-to-Speech
+# -------------------------
 def azure_tts(text):
     speech_config = speechsdk.SpeechConfig(
         subscription=SPEECH_KEY,
@@ -71,42 +70,25 @@ def azure_tts(text):
     )
     speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        audio_config = speechsdk.audio.AudioOutputConfig(filename=tmp.name)
-        synthesizer = speechsdk.SpeechSynthesizer(
-            speech_config=speech_config,
-            audio_config=audio_config
-        )
-        synthesizer.speak_text_async(text).get()
-        return tmp.name
+    synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
 
-# -----------------------------
-#  STREAMLIT UI
-# -----------------------------
-st.title("🎤 Azure Voice → OpenRouter GPT → Voice Chatbot (Auto-Language)")
+    result = synthesizer.speak_text_async(text).get()
+    audio_data = result.audio_data
 
-# Record audio input
-audio_input = st.audio_input("Click to record your voice 🎙️")
+    return audio_data
 
-if audio_input:
-    st.write("⏳ Processing your voice...")
-    audio_bytes = audio_input.getvalue()
+# -------------------------
+# 🖥️ Streamlit UI
+# -------------------------
+st.title("🎤 OpenRouter + Azure Voice Chatbot")
 
-    # STT
-    text = azure_stt_from_audio(audio_bytes)
-    if text:
-        st.success(f"🗣️ You said: {text}")
+if st.button("Click to Speak"):
+    text = azure_stt()
+    st.write("🗣️ You said:", text)
 
-        # GPT
-        answer = chat_llm(text)
-        st.info(f"🤖 GPT: {answer}")
+    if text.strip():
+        answer = openrouter_chat(text)
+        st.write("🤖 AI:", answer)
 
-        # TTS — only run if we have an answer
-        wav_file = azure_tts(answer)
-        st.audio(wav_file, format="audio/wav")
-    else:
-        st.error("❌ Speech not recognized. Please try again.")
-
-    # TTS
-    wav_file = azure_tts(answer)
-    st.audio(wav_file, format="audio/wav")
+        audio_bytes = azure_tts(answer)
+        st.audio(audio_bytes, format="audio/wav")

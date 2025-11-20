@@ -9,7 +9,7 @@ AZURE_SPEECH_KEY = "FS4yBV3YjzD9gw2g8Xzcz1k8OVpIXR8QaB0NuZt5ODQmappDVzirJQQJ99BK
 AZURE_SPEECH_REGION = "eastasia"  # just the region
 
 OPENROUTER_API_KEY = "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"
-OPENROUTER_MODEL = "google/gemini-3-pro-preview"
+OPENROUTER_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b:free"
 
 # -------------------------
 # Streamlit page config
